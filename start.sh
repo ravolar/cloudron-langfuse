@@ -111,6 +111,9 @@ LANGFUSE_INIT_USER_EMAIL=""          # e.g. "me@example.com"
 # (and the same with LANGFUSE_S3_MEDIA_UPLOAD_*)
 
 # --- Other options ---------------------------------------------------------------------------
+# Delete raw ingestion events (S3 events/, full trace payloads) older than this many days, daily.
+# Langfuse never deletes them itself, not even when a trace is deleted through the API.
+# S3_EVENTS_RETENTION_DAYS="30"
 # Accept traces from old SDKs (Python v2 / JS v3) as well; costs extra ClickHouse writes.
 # LANGFUSE_MIGRATION_V4_WRITE_MODE="dual"
 # TELEMETRY_ENABLED="true"           # anonymous usage statistics to Langfuse (off by default)

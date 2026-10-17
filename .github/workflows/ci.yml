@@ -20,8 +20,8 @@ jobs:
 
       - name: Lint
         run: |
-          bash -n start.sh app-env.sh web.sh worker.sh backup.sh restore.sh test/smoke.sh test/upgrade.sh
-          shellcheck -S warning start.sh app-env.sh web.sh worker.sh backup.sh restore.sh test/smoke.sh test/upgrade.sh
+          bash -n start.sh app-env.sh web.sh worker.sh backup.sh restore.sh retention.sh test/smoke.sh test/upgrade.sh
+          shellcheck -S warning start.sh app-env.sh web.sh worker.sh backup.sh restore.sh retention.sh test/smoke.sh test/upgrade.sh
           jq empty CloudronManifest.json CloudronVersions.json
 
       - name: Set up Docker Buildx

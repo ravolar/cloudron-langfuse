@@ -93,7 +93,7 @@ RUN sed -e 's,^logfile=.*$,logfile=/run/supervisord.log,' \
         -i /etc/supervisor/supervisord.conf
 
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-COPY start.sh app-env.sh web.sh worker.sh backup.sh restore.sh /app/pkg/
+COPY start.sh app-env.sh web.sh worker.sh backup.sh restore.sh retention.sh /app/pkg/
 COPY supervisor/ /etc/supervisor/conf.d/
 # Explicit modes: the build context can arrive with 0600 files (Cloudron's on-server build).
 RUN chmod 0755 /app/pkg /app/pkg/*.sh \

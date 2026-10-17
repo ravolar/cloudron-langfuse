@@ -222,6 +222,22 @@ check "event stored in the bundled S3 (/app/data/s3)" bash -c "docker exec ${ID}
 check "no lock files in the S3 store" bash -c "! docker exec ${ID}-app test -e /app/data/s3/buckets/.vgwlocks"
 check "S3 metadata in the sidecar directory (no xattrs)" bash -c "docker exec ${ID}-app find /app/data/s3/meta -type f | grep -q ."
 
+echo "==> Raw event retention"
+# An event file from 40 days ago (backdated copy of a real one) must go, today's must stay.
+docker exec -u cloudron "${ID}-app" bash -c 'f=$(find /app/data/s3/buckets/langfuse/events -type f | head -1); \
+    old=/app/data/s3/buckets/langfuse/events/otel/retention-test/2000/01/01/00/00/old.json; \
+    mkdir -p "$(dirname "${old}")" /app/data/s3/meta/langfuse/events/otel/retention-test/2000/01/01/00/00/old.json/meta && cp "${f}" "${old}" && touch -d "40 days ago" "${old}"'
+echo 'S3_EVENTS_RETENTION_DAYS="30"' | edit_env "cat >> /d/env.sh"
+stop_app
+start_app
+if wait_ready; then pass "app restarted with retention"; else fail "app restarted with retention"; docker logs "${ID}-app" 2>&1 | tail -40; exit 1; fi
+sleep 3
+check "retention reports its run" bash -c "docker logs ${ID}-app 2>&1 | grep -q 'Raw event retention: deleted 1 event files older than 30 days'"
+check "old event file deleted" bash -c "! docker exec ${ID}-app test -e /app/data/s3/buckets/langfuse/events/otel/retention-test/2000/01/01/00/00/old.json"
+check "its metadata and empty directories deleted" bash -c "! docker exec ${ID}-app test -e /app/data/s3/meta/langfuse/events/otel/retention-test && ! docker exec ${ID}-app test -e /app/data/s3/buckets/langfuse/events/otel/retention-test"
+check "recent event files kept" bash -c "docker exec ${ID}-app find /app/data/s3/buckets/langfuse/events -type f | grep -q ."
+check "trace still readable (ClickHouse untouched)" trace_visible "${T1}"
+
 echo "==> Media upload (presigned URL)"
 img="${WORK}/pixel.png"
 printf '\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89\0\0\0\rIDATx\x9cc\xf8\xff\xff?\0\x05\xfe\x02\xfe\xa7\x35\x81\x84\0\0\0\0IEND\xaeB`\x82' > "${img}"

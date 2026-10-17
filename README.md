@@ -160,6 +160,20 @@ restore hook replaces the store with that dump, so ClickHouse always matches the
 PostgreSQL. The dump takes disk space roughly equal to the compressed ClickHouse data (a backup of
 a stopped app briefly needs about twice that, for a copy of the store).
 
+**Raw events.** Langfuse writes every ingestion batch (full trace payloads) to `events/` in S3 and
+never deletes those files, not even when a trace is deleted through the API (OTLP batches are not
+tracked per trace), and the bundled S3 server has no lifecycle rules. To keep them for a limited
+time set, in `env.sh`:
+
+```sh
+S3_EVENTS_RETENTION_DAYS="30"
+```
+
+The package then deletes event files older than that once at start and every 24 hours (the log
+says how many). Traces in ClickHouse are not affected: delete those through Langfuse's API (or
+its UI). Copies already in Cloudron backups stay until those backups expire. Not set: events are
+kept, as upstream does.
+
 **Media.** Multimodal attachments (images, audio, files) are uploaded and downloaded by SDKs and
 browsers directly to the S3 server through short-lived presigned links on the media subdomain.
 Every request must carry a valid signature; the bucket is private.
