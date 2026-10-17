@@ -45,7 +45,7 @@ after installing: [Installation](#installation).
 
 ## Requirements
 
-* Cloudron 9.1 or later.
+* Cloudron 10.0 or later.
 * Memory: about 1.5–2.5 GB in use; the app's limit is 4 GB by default. ClickHouse sizes its own
   limit to 45% of the app's memory limit, so raise the limit (app → Resources) for larger
   volumes.

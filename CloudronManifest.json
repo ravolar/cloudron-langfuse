@@ -51,6 +51,6 @@
     }
   },
   "optionalSso": true,
-  "minBoxVersion": "9.1.0",
+  "minBoxVersion": "10.0.0",
   "packageUrl": "https://github.com/ravolar/cloudron-langfuse"
 }
