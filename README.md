@@ -14,6 +14,18 @@ listed in the Cloudron App Store; install it from the URL below.
 | Install URL | `https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/CloudronVersions.json` |
 | Image | `ghcr.io/ravolar/cloudron-langfuse` |
 
+## Install (no CLI needed)
+
+In your Cloudron dashboard open **App Store → Add custom app → Community app**, paste this URL and
+click **Install**:
+
+```
+https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/CloudronVersions.json
+```
+
+New versions then show up in the dashboard (app → **Updates**), like App Store apps. First steps
+after installing: [Installation](#installation).
+
 ## What you get
 
 * Langfuse's official web and worker images, unmodified, pinned by digest.
@@ -47,7 +59,7 @@ listed in the Cloudron App Store; install it from the URL below.
    https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/CloudronVersions.json
    ```
 
-   (CLI: `cloudron install --versions-url <url> --location langfuse.example.com`)
+   (Optional, with the Cloudron CLI instead: `cloudron install --versions-url <url> --location langfuse.example.com`)
 2. Choose the user management:
    * **Cloudron user management (SSO)**: users sign in with their Cloudron account; access is
      controlled in the app's Access Control. The first person to sign in creates the first
