@@ -28,9 +28,10 @@ wait_for Redis env REDISCLI_AUTH="${REDIS_AUTH}" redis-cli -h "${REDIS_HOST}" -p
 if [[ "${bundled_s3}" == true ]]; then
     wait_for "the S3 server" curl -s -o /dev/null http://127.0.0.1:9100/
     # Create the bucket (an existing one answers 409, which is fine).
-    status=$(curl -s -o /dev/null -w '%{http_code}' -X PUT --aws-sigv4 "aws:amz:us-east-1:s3" \
-        --user "${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID}:${LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY}" \
-        "http://127.0.0.1:9100/${LANGFUSE_S3_EVENT_UPLOAD_BUCKET}")
+    # Credentials through stdin, not the command line (visible in /proc).
+    status=$(printf 'user = "%s:%s"\n' "${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID}" "${LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY}" |
+        curl -s -K - -o /dev/null -w '%{http_code}' -X PUT --aws-sigv4 "aws:amz:us-east-1:s3" \
+            "http://127.0.0.1:9100/${LANGFUSE_S3_EVENT_UPLOAD_BUCKET}")
     if [[ "${status}" != 200 && "${status}" != 409 ]]; then
         echo "==> ERROR: could not create the S3 bucket (HTTP ${status})"
         exit 1
@@ -50,7 +51,12 @@ touch /run/langfuse/state/migrated
 # The first account, without SSO: env.sh names its email and the package supplies the generated
 # password, but only while the database has no users at all. Upstream's LANGFUSE_INIT_* would
 # otherwise recreate the account (with that password) on every start after it was deleted.
-if [[ -n "${LANGFUSE_INIT_USER_EMAIL:-}" && -z "${LANGFUSE_INIT_ORG_ID:-}" ]]; then
+if [[ -n "${LANGFUSE_INIT_USER_EMAIL:-}" && -z "${LANGFUSE_INIT_ORG_ID:-}" && "${AUTH_DISABLE_USERNAME_PASSWORD:-}" == true ]]; then
+    # With SSO that account could never sign in, and an SSO account with the same address would
+    # not be linked to it (no linking by email).
+    echo "==> NOTE: LANGFUSE_INIT_USER_EMAIL is ignored: email/password sign-in is off (SSO)"
+    unset LANGFUSE_INIT_USER_EMAIL LANGFUSE_INIT_USER_NAME
+elif [[ -n "${LANGFUSE_INIT_USER_EMAIL:-}" && -z "${LANGFUSE_INIT_ORG_ID:-}" ]]; then
     users=$(psql "${DATABASE_URL}" -tAc 'SELECT count(*) FROM users')
     if [[ "${users}" == 0 ]]; then
         echo "==> Creating the first account ${LANGFUSE_INIT_USER_EMAIL}; its password is INITIAL_ADMIN_PASSWORD in /app/data/.secrets/secrets.env"

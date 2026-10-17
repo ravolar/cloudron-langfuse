@@ -260,7 +260,7 @@ jobs:
           title="Automatic update to Langfuse ${LANGFUSE:-?} failed"
           existing=$(gh issue list --state open --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')
           if [[ -n "${existing}" ]]; then
-            gh issue comment "${existing}" --body "Failed again: ${RUN_URL}"
+            echo "Issue #${existing} is already open; not commenting on every scheduled retry."
           else
             gh issue create --title "${title}" --body "The automatic update stopped before publishing, so nothing was released and installations are unaffected.
 

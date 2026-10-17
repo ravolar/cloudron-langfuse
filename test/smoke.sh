@@ -78,10 +78,9 @@ sleep 2
 mkdir -p "${WORK}/data"
 # The operator's first edit without SSO (POSTINSTALL): name the first account. SMOKE_MARKER shows
 # which processes get env.sh.
-cat > "${WORK}/data/env.sh" <<EOF
-LANGFUSE_INIT_USER_EMAIL="${EMAIL}"
-SMOKE_MARKER="from-env-sh"
-EOF
+printf 'LANGFUSE_INIT_USER_EMAIL="%s"\nSMOKE_MARKER="from-env-sh"\n' "${EMAIL}" > "${WORK}/data/env.sh"
+# A NUL byte (bash would silently drop it) must be refused.
+printf 'NUL="a\0b"\n' >> "${WORK}/data/env.sh"
 
 start_app() {
     docker run -d --name "${ID}-app" --network "${ID}" --read-only \
@@ -176,6 +175,13 @@ run_checks() {
     check "all processes run as the app user (uid 1000)" test "$(app_exec bash -c 'for p in /proc/[0-9]*; do case "$(cat "$p/comm" 2>/dev/null)" in node|clickhouse*|versitygw) awk "/^Uid:/{print \$2}" "$p/status";; esac; done | sort -u | tr -d "\n"')" = "1000"
 }
 
+echo "==> Refuses a NUL byte in env.sh"
+start_app
+sleep 8
+check "NUL byte in env.sh refused" bash -c "docker logs ${ID}-app 2>&1 | grep -q 'contains control characters'"
+docker rm -f "${ID}-app" >/dev/null
+sed -i '/^NUL=/d' "${WORK}/data/env.sh"
+
 echo "==> First start"
 start_app
 if wait_ready; then pass "app started"; else fail "app started"; docker logs "${ID}-app" 2>&1 | tail -80; exit 1; fi
@@ -195,6 +201,7 @@ LANGFUSE_INIT_PROJECT_NAME="Smoke"
 LANGFUSE_INIT_PROJECT_PUBLIC_KEY="${PK}"
 LANGFUSE_INIT_PROJECT_SECRET_KEY="${SK}"
 LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT="http://localhost:${S3PORT}"
+LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT="http://127.0.0.1:9100"
 EOF
 stop_app
 start_app

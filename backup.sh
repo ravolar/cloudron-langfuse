@@ -40,15 +40,30 @@ elif curl -sf http://127.0.0.1:8123/ping >/dev/null 2>&1; then
         --query "BACKUP DATABASE default TO File('clickhouse-backup.new/dump')" >/dev/null
     chown -R root:root "${DUMP}.new"
 else
+    # A running server holds a lock on <store>/status. Locked but not answering (restarting,
+    # crash-looping): copying a store that is being written would not give a consistent dump.
+    if [[ -f "${CH_STORE}/status" && ! -L "${CH_STORE}/status" ]] && ! flock -n "${CH_STORE}/status" true; then
+        log "ERROR: ClickHouse is running but not answering; retry the backup once the app is healthy"
+        exit 1
+    fi
     # The app is stopped: dump from a copy of the store with `clickhouse local` (reading the store
-    # in place would write to it).
+    # in place would write to it), as the app user, since the copy is the app's data.
     log "app is not running; dumping ClickHouse from a copy of its store"
     snap=/app/data/.clickhouse-snapshot
-    rsync -a --exclude=/status --exclude=/tmp/ --exclude=/shadow/ "${CH_STORE}/" "${snap}/"
+    rc=0
+    rsync -a --exclude=/status --exclude=/tmp/ --exclude=/shadow/ "${CH_STORE}/" "${snap}/" || rc=$?
+    if [[ ${rc} != 0 && ${rc} != 24 ]]; then
+        log "ERROR: copying the ClickHouse store failed (rsync exit ${rc})"
+        rm -rf "${snap}"
+        exit 1
+    fi
     mkdir "${DUMP}.new"
-    (cd /app/data && clickhouse local --path="${snap}" --config-file=/etc/clickhouse-server/backups.xml \
+    chown -R cloudron:cloudron "${snap}" "${DUMP}.new"
+    (cd /app/data && setpriv --reuid=cloudron --regid=cloudron --init-groups env HOME=/tmp \
+        clickhouse local --path="${snap}" --config-file=/etc/clickhouse-server/backups.xml \
         --query "BACKUP DATABASE default TO File('clickhouse-backup.new/dump')" >/dev/null)
     rm -rf "${snap}"
+    chown -R root:root "${DUMP}.new"
 fi
 if [[ -d "${DUMP}.new" ]]; then
     rm -rf "${DUMP}"

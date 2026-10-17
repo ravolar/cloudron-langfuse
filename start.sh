@@ -130,7 +130,8 @@ check_env_file() {
         echo "    Re-save it with Unix (LF) line endings and restart."
         return 1
     fi
-    if LC_ALL=C grep -q $'[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]' "${file}"; then
+    if [[ "$(tr -d '\0' < "${file}" | wc -c)" != "$(wc -c < "${file}")" ]] ||
+        LC_ALL=C grep -q $'[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]' "${file}"; then
         echo "==> ERROR: ${file} contains control characters. Remove them and restart."
         return 1
     fi
@@ -267,6 +268,13 @@ if [[ -n "${LANGFUSE_MEDIA_DOMAIN:-}" ]]; then
     LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT="https://${LANGFUSE_MEDIA_DOMAIN}"
 else
     echo "==> WARNING: no media domain is set: multimodal attachments will not load in browsers."
+fi
+# Langfuse's own media operations (deletions, reads) go to the S3 server on loopback; presigned
+# links are still signed for the public endpoint. Not set when env.sh points media elsewhere:
+# upstream treats an empty value as set, so it could not be cleared there.
+if ! grep -qE '^LANGFUSE_S3_MEDIA_UPLOAD_(INTERNAL_)?ENDPOINT=' /app/data/env.sh; then
+    LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT=http://127.0.0.1:9100
+    defaults+=(LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT)
 fi
 
 # Sign-in. With Cloudron's OpenID Connect (user management chosen at install), Cloudron decides who

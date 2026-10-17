@@ -51,7 +51,7 @@ listed in the Cloudron App Store; install it from the URL below.
 2. Choose the user management:
    * **Cloudron user management (SSO)**: users sign in with their Cloudron account; access is
      controlled in the app's Access Control. The first person to sign in creates the first
-     organization. Nothing else to set up.
+     organization. Nothing else to set up (`LANGFUSE_INIT_USER_EMAIL` is ignored in this mode).
    * **No Cloudron user management**: open the **File Manager**, set your email as
      `LANGFUSE_INIT_USER_EMAIL` in `/app/data/env.sh` and **restart**. The package creates that
      account as owner of a first organization. Its password:
@@ -67,6 +67,10 @@ records for both hostnames (app and media) yourself **before** installing.
 |---|---|---|
 | Cloudron user management | Cloudron accounts | any Cloudron user with access to the app; email/password off |
 | Without it | email and password | closed; the first account comes from `LANGFUSE_INIT_USER_EMAIL` |
+
+Every signed-in user can create organizations of their own; others only see the organizations
+and projects they are invited to. To restrict who may create organizations, set
+`LANGFUSE_ALLOWED_ORGANIZATION_CREATORS="me@example.com,..."`.
 
 Accounts are never linked by email address (`AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING=false`), so an
 account at the identity provider cannot take over an existing Langfuse account with the same
@@ -125,7 +129,8 @@ OpenTelemetry). If you still send from Python v2 / JS v3, set
 * `NEXTAUTH_SECRET` (sessions), `SALT` (API key hashes), `CLICKHOUSE_PASSWORD`,
   `S3_ACCESS_KEY` / `S3_SECRET_KEY` (bundled S3 server).
 * `INITIAL_ADMIN_PASSWORD`: the first account's password (only used while the database has no
-  users). Change it in Langfuse after signing in (password reset by email).
+  users). Change it with Langfuse's password reset, which works by email, so outgoing email must
+  be enabled for the app.
 
 ## Storage
 
@@ -140,7 +145,8 @@ by file (a live store changes constantly). Instead, Cloudron runs the package's 
 each backup: it writes a consistent `BACKUP` of the Langfuse database through the running server
 into `/app/data/clickhouse-backup`, which is then backed up with the rest. On restore or clone the
 restore hook replaces the store with that dump, so ClickHouse always matches the restored
-PostgreSQL. The dump takes disk space roughly equal to the compressed ClickHouse data.
+PostgreSQL. The dump takes disk space roughly equal to the compressed ClickHouse data (a backup of
+a stopped app briefly needs about twice that, for a copy of the store).
 
 **Media.** Multimodal attachments (images, audio, files) are uploaded and downloaded by SDKs and
 browsers directly to the S3 server through short-lived presigned links on the media subdomain.
@@ -165,7 +171,8 @@ Package changes are released by running the workflow by hand with **Release pack
   `env.sh` is root-owned and only readable by the app; the secrets are root-only and handed to
   the processes by name.
 * ClickHouse (stock `default` user removed) and the worker listen on loopback only. The web app
-  (port 3000) and the S3 server (port 9100) are reachable only through Cloudron's proxy.
+  (port 3000) and the S3 server (port 9100) are reachable through Cloudron's proxy (and, like every
+  app, from other containers on the Cloudron network; S3 still needs credentials).
 * ClickHouse and the S3 server get only their own credentials, never `env.sh`.
 * Telemetry to Langfuse is off by default.
 * The S3 server is the Versity S3 Gateway. MinIO, which other Langfuse setups bundle, is no longer

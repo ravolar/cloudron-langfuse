@@ -19,6 +19,9 @@ if [[ -L "${DUMP}" ]]; then
     exit 1
 fi
 
+# The store belongs to the app: remove whatever is at the marker's path (a link is removed, not
+# followed) before creating it. The app is not running during a restore.
+rm -rf "${CH_STORE:?}/${MARKER}"
 touch "${CH_STORE}/${MARKER}"
 find "${CH_STORE}" -mindepth 1 -maxdepth 1 ! -name "${MARKER}" -exec rm -rf {} +
 chown cloudron:cloudron "${CH_STORE}"
