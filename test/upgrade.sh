@@ -36,6 +36,11 @@ pass() { echo "  ok    $1"; }
 fail() { echo "  FAIL  $1"; FAILED=1; }
 check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "${name}"; else fail "${name}"; fi; }
 app_exec() { docker exec "${ID}-app" "$@"; }
+# /app/data belongs to root once the app has started (and this test may not run as root): edit
+# env.sh from a container.
+edit_env() { # <sh script operating on /d/env.sh>; stdin is passed through
+    docker run --rm -i -v "${WORK}/data:/d" --entrypoint sh "${NEW_IMAGE}" -c "$1"
+}
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 auth() { printf '%s:%s' "${PK}" "${SK}" | base64 -w0; }
 api() { curl -s -H "Authorization: Basic $(auth)" -H 'Content-Type: application/json' "$@"; }
@@ -125,7 +130,7 @@ echo "==> Old version: ${OLD_IMAGE}"
 start_app "${OLD_IMAGE}"
 if wait_ready; then pass "old version started"; else fail "old version started"; docker logs "${ID}-app" 2>&1 | tail -60; exit 1; fi
 # The project and keys need the organization the first account creates; add it and restart.
-echo 'LANGFUSE_INIT_ORG_ID="default-org"' >> "${WORK}/data/env.sh"
+echo 'LANGFUSE_INIT_ORG_ID="default-org"' | edit_env "cat >> /d/env.sh"
 docker restart -t 20 "${ID}-app" >/dev/null
 if wait_ready; then pass "old version restarted with a project"; else fail "old version restarted with a project"; docker logs "${ID}-app" 2>&1 | tail -60; exit 1; fi
 

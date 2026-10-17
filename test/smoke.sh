@@ -40,6 +40,11 @@ pass() { echo "  ok    $1"; }
 fail() { echo "  FAIL  $1"; FAILED=1; }
 check() { local name=$1; shift; if "$@" >/dev/null 2>&1; then pass "${name}"; else fail "${name}"; fi; }
 app_exec() { docker exec "${ID}-app" "$@"; }
+# /app/data belongs to root once the app has started (and this test may not run as root): edit
+# env.sh from a container.
+edit_env() { # <sh script operating on /d/env.sh>; stdin is passed through
+    docker run --rm -i -v "${WORK}/data:/d" --entrypoint sh "${IMAGE}" -c "$1"
+}
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 auth() { printf '%s:%s' "${PK}" "${SK}" | base64 -w0; }
 # Environment of the oldest process whose command line matches $1 (not this probe), read as the
@@ -180,7 +185,7 @@ start_app
 sleep 8
 check "NUL byte in env.sh refused" bash -c "docker logs ${ID}-app 2>&1 | grep -q 'contains control characters'"
 docker rm -f "${ID}-app" >/dev/null
-sed -i '/^NUL=/d' "${WORK}/data/env.sh"
+edit_env "sed -i '/^NUL=/d' /d/env.sh"
 
 echo "==> First start"
 start_app
@@ -194,7 +199,7 @@ check "wrong password is refused" test -z "$(login "${EMAIL}" "wrong-password-12
 check "first account owns the first organization" bash -c "docker exec ${ID}-pg psql -U lfuser -d lfdb -tAc \"select m.role from organization_memberships m join users u on u.id = m.user_id where u.email = '${EMAIL}'\" | grep -qx OWNER"
 
 echo "==> Project and API keys (upstream LANGFUSE_INIT_*), restart"
-cat >> "${WORK}/data/env.sh" <<EOF
+edit_env "cat >> /d/env.sh" <<EOF
 LANGFUSE_INIT_ORG_ID="default-org"
 LANGFUSE_INIT_PROJECT_ID="smoke"
 LANGFUSE_INIT_PROJECT_NAME="Smoke"
@@ -266,12 +271,12 @@ run_checks
 
 echo "==> Refuses to start on a broken env.sh or an interrupted restore"
 stop_app
-echo 'BROKEN=$(id)' >> "${WORK}/data/env.sh"
+echo 'BROKEN=$(id)' | edit_env "cat >> /d/env.sh"
 start_app
 sleep 8
 check "command substitution in env.sh refused" bash -c "docker logs ${ID}-app 2>&1 | grep -q 'may only contain NAME='"
 stop_app
-sed -i '/^BROKEN=/d' "${WORK}/data/env.sh"
+edit_env "sed -i '/^BROKEN=/d' /d/env.sh"
 docker run --rm -v "${ID}-ch:/c" --entrypoint touch "${IMAGE}" /c/.restore-in-progress
 start_app
 sleep 8
