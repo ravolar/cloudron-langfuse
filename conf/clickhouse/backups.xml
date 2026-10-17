@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- For `clickhouse local` in backup.sh (when the app is stopped): dumps go under /app/data. -->
+<clickhouse>
+    <backups>
+        <allowed_path>/app/data</allowed_path>
+    </backups>
+</clickhouse>

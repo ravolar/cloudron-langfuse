@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<!-- Overrides merged over ClickHouse's default config.xml. Adapted from OrcVole's langfuse-cloudron
+     (MIT), which measured the system-log settings below on a long-running install.
+     (No double hyphens in XML comments: ClickHouse refuses to start on them.) -->
+<clickhouse>
+    <path>/var/lib/clickhouse/</path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+    <user_directories>
+        <users_xml><path>users.xml</path></users_xml>
+        <local_directory><path>/var/lib/clickhouse/access/</path></local_directory>
+    </user_directories>
+
+    <!-- BACKUP / RESTORE (backup.sh, restore.sh) read and write dumps under /app/data only. -->
+    <backups>
+        <allowed_path>/app/data</allowed_path>
+    </backups>
+
+    <!-- Logs to stdout only (Cloudron collects them); /var/log is read-only. -->
+    <logger>
+        <console>1</console>
+        <level>warning</level>
+        <log remove="1"/>
+        <errorlog remove="1"/>
+    </logger>
+
+    <!-- Loopback only; Langfuse is the only client. -->
+    <listen_host>127.0.0.1</listen_host>
+    <listen_host>::1</listen_host>
+    <listen_try>1</listen_try>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <interserver_http_port remove="1"/>
+    <mysql_port remove="1"/>
+    <postgresql_port remove="1"/>
+
+    <!-- Langfuse returns wrong results on a non-UTC ClickHouse. -->
+    <timezone>UTC</timezone>
+
+    <!-- ClickHouse sizes itself from the container's memory limit (the app's memory limit in
+         Cloudron), which it shares with the web app and the worker. By default it would count the
+         whole container (cgroup) as its own usage, Node processes included, and refuse queries
+         at idle; count only its own memory. -->
+    <max_server_memory_usage_to_ram_ratio>0.45</max_server_memory_usage_to_ram_ratio>
+    <memory_worker_use_cgroup>0</memory_worker_use_cgroup>
+    <mark_cache_size>268435456</mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+
+    <!-- ClickHouse's own telemetry tables grow without bound on defaults and come to dominate the
+         store, memory and background merges of a small install. Off, except query_log and error_log
+         (kept 3 days, for debugging) and crash_log. -->
+    <trace_log remove="1"/>
+    <text_log remove="1"/>
+    <part_log remove="1"/>
+    <metric_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <query_metric_log remove="1"/>
+    <processors_profile_log remove="1"/>
+    <asynchronous_insert_log remove="1"/>
+    <opentelemetry_span_log remove="1"/>
+    <histogram_metric_log remove="1"/>
+    <background_schedule_pool_log remove="1"/>
+    <query_views_log remove="1"/>
+    <query_thread_log remove="1"/>
+    <blob_storage_log remove="1"/>
+    <instrumentation_trace_log remove="1"/>
+    <backup_log remove="1"/>
+    <aggregated_zookeeper_log remove="1"/>
+    <zookeeper_connection_log remove="1"/>
+    <delta_lake_metadata_log remove="1"/>
+    <iceberg_metadata_log remove="1"/>
+    <query_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_log>
+    <error_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></error_log>
+</clickhouse>

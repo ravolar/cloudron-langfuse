@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- Langfuse's ClickHouse user; the password comes from the environment (secrets.env via
+     app-env.sh), never from the image. The stock "default" user is removed. -->
+<clickhouse>
+    <users>
+        <default remove="1"/>
+        <clickhouse>
+            <password from_env="CLICKHOUSE_PASSWORD"/>
+            <networks>
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </clickhouse>
+    </users>
+</clickhouse>

@@ -1,0 +1,56 @@
+{
+  "manifestVersion": 2,
+  "id": "io.github.ravolar.langfuse",
+  "title": "Langfuse",
+  "tagline": "Open-source LLM observability: tracing, evals, prompt management",
+  "description": "file://DESCRIPTION.md",
+  "changelog": "file://CHANGELOG",
+  "postInstallMessage": "file://POSTINSTALL.md",
+  "version": "0.1.0",
+  "upstreamVersion": "4.63.0",
+  "website": "https://langfuse.com",
+  "documentationUrl": "https://langfuse.com/self-hosting",
+  "packagerName": "ravolar",
+  "packagerUrl": "https://github.com/ravolar/cloudron-langfuse",
+  "iconUrl": "https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/logo.png",
+  "icon": "file://logo.png",
+  "mediaLinks": [
+    "https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/logo.png"
+  ],
+  "tags": [
+    "developer",
+    "ai",
+    "analytics",
+    "observability"
+  ],
+  "httpPort": 3000,
+  "healthCheckPath": "/api/public/health",
+  "memoryLimit": 4294967296,
+  "persistentDirs": [
+    "/var/lib/clickhouse"
+  ],
+  "backupCommand": "/app/pkg/backup.sh",
+  "restoreCommand": "/app/pkg/restore.sh",
+  "httpPorts": {
+    "LANGFUSE_MEDIA_DOMAIN": {
+      "title": "Media storage",
+      "description": "S3 endpoint for multimodal trace attachments (images, audio, files), used by SDKs and browsers through presigned links. Requests need a valid signature; the bucket is private.",
+      "containerPort": 9100,
+      "defaultValue": "langfuse-media"
+    }
+  },
+  "addons": {
+    "localstorage": {},
+    "postgresql": {},
+    "redis": {},
+    "oidc": {
+      "loginRedirectUri": "/api/auth/callback/custom"
+    },
+    "sendmail": {
+      "supportsDisplayName": true
+    }
+  },
+  "optionalSso": true,
+  "minBoxVersion": "9.1.0",
+  "packageUrl": "https://github.com/ravolar/cloudron-langfuse"
+}

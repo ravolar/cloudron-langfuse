@@ -1,0 +1,270 @@
+# Automatic updates: runs every 3 hours (and on demand: Actions -> "Update Langfuse" -> Run workflow).
+#
+# 1. Looks up Langfuse's latest GitHub release vX.Y.Z and the digests of
+#    ghcr.io/langfuse/langfuse:X.Y.Z and ghcr.io/langfuse/langfuse-worker:X.Y.Z.
+# 2. If it is newer than the pinned one (or if "release package changes" is ticked), pins both,
+#    bumps the package version, writes the CHANGELOG entry and builds the image with its
+#    build-time checks.
+# 3. Runs test/smoke.sh on PostgreSQL 16 and 18 (Cloudron 10.0 and 10.1: trace ingestion end to
+#    end, media upload, backup/restore, privilege checks) and test/upgrade.sh (the last published
+#    version with real data, updated to the candidate).
+# 4. Only if all of that passes: pushes the image to GHCR, adds the version to
+#    CloudronVersions.json as published, commits and tags. Installations then see the update in
+#    Cloudron (app -> Updates; installed automatically only where automatic updates are on).
+# A failed run opens (or comments on) a GitHub issue, so a blocked update is visible.
+name: Update Langfuse
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      release_package_changes:
+        description: "Release even if Langfuse is unchanged (changes to this package on main)"
+        type: boolean
+        default: false
+      notes:
+        description: "CHANGELOG line for package changes (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Resolve Langfuse's latest release
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.release_package_changes }}
+        run: |
+          # The release currently pinned in the Dockerfile: a forced release of package changes falls
+          # back to it when upstream's latest release is unusable (images missing, or older).
+          pinned_tag=v$(sed -nE 's#^FROM ghcr.io/langfuse/langfuse:([0-9.]+)@.*#\1#p' Dockerfile)
+          pinned_web=$(sed -nE 's#^FROM ghcr.io/langfuse/langfuse:[0-9.]+@(sha256:[0-9a-f]+).*#\1#p' Dockerfile)
+          pinned_worker=$(sed -nE 's#^FROM ghcr.io/langfuse/langfuse-worker:[0-9.]+@(sha256:[0-9a-f]+).*#\1#p' Dockerfile)
+          use_pinned() {
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "tag=${pinned_tag}" >> "$GITHUB_OUTPUT"
+            echo "version=${pinned_tag#v}" >> "$GITHUB_OUTPUT"
+            echo "web=${pinned_web}" >> "$GITHUB_OUTPUT"
+            echo "worker=${pinned_worker}" >> "$GITHUB_OUTPUT"
+            echo "### $1; releasing package changes on the pinned Langfuse ${pinned_tag}" >> "$GITHUB_STEP_SUMMARY"
+          }
+          tag=$(gh api repos/langfuse/langfuse/releases/latest --jq .tag_name)
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "unexpected release tag ${tag}" >&2; exit 1; }
+          digest() {
+            local repo=$1 token
+            token=$(curl -fsS "https://ghcr.io/token?scope=repository:langfuse/${repo}:pull" | jq -r .token)
+            curl -fsSI -H "Authorization: Bearer ${token}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json" \
+              "https://ghcr.io/v2/langfuse/${repo}/manifests/${tag#v}" \
+              | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+          }
+          web=$(digest langfuse || true); worker=$(digest langfuse-worker || true)
+          if [[ "${web}" != sha256:* || "${worker}" != sha256:* ]]; then
+            if [[ "${FORCE}" == true ]]; then use_pinned "Images for Langfuse ${tag} are not published yet"; exit 0; fi
+            # Upstream publishes the release before its images; the next scheduled run retries.
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Images for Langfuse ${tag} are not published yet; will retry" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ "$(printf '%s\n%s\n' "${pinned_tag#v}" "${tag#v}" | sort -V | tail -1)" != "${tag#v}" ]]; then
+            if [[ "${FORCE}" == true ]]; then use_pinned "Latest release ${tag} is older than the pinned ${pinned_tag}"; exit 0; fi
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Latest release ${tag} is older than the packaged ${pinned_tag}; nothing to do" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "web=${web}" >> "$GITHUB_OUTPUT"
+          echo "worker=${worker}" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to release
+        id: plan
+        if: steps.upstream.outputs.ready == 'true'
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+          WEB: ${{ steps.upstream.outputs.web }}
+          WORKER: ${{ steps.upstream.outputs.worker }}
+          FORCE: ${{ inputs.release_package_changes }}
+        run: |
+          current=$(jq -r .upstreamVersion CloudronManifest.json)
+          if [[ "$(printf '%s\n%s\n' "${current}" "${VERSION}" | sort -V | tail -1)" != "${VERSION}" ]]; then
+            # e.g. upstream marked an older release as latest again: never downgrade, nothing to do.
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "### Latest release ${VERSION} is older than the packaged ${current}; nothing to do" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          sed -i -E \
+            -e "s#ghcr.io/langfuse/langfuse:[0-9.]+@sha256:[0-9a-f]+#ghcr.io/langfuse/langfuse:${VERSION}@${WEB}#" \
+            -e "s#ghcr.io/langfuse/langfuse-worker:[0-9.]+@sha256:[0-9a-f]+#ghcr.io/langfuse/langfuse-worker:${VERSION}@${WORKER}#" \
+            Dockerfile
+          if git diff --quiet Dockerfile; then upstream=false; else upstream=true; fi
+          echo "upstream=${upstream}" >> "$GITHUB_OUTPUT"
+          # The manifest version not yet in CloudronVersions.json (first release): publish it as is.
+          if jq -e --arg v "$(jq -r .version CloudronManifest.json)" '.versions | has($v)' CloudronVersions.json >/dev/null; then
+            bump=true
+          else
+            bump=false
+          fi
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+          if [[ "${upstream}" == false && "${FORCE}" != true && "${bump}" == true ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "### Langfuse is up to date" >> "$GITHUB_STEP_SUMMARY"
+            echo "Langfuse ${VERSION} is already packaged; nothing to do." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump version and write the CHANGELOG entry
+        id: version
+        if: steps.plan.outputs.release == 'true'
+        env:
+          LANGFUSE: ${{ steps.upstream.outputs.version }}
+          TAG: ${{ steps.upstream.outputs.tag }}
+          UPSTREAM_CHANGED: ${{ steps.plan.outputs.upstream }}
+          BUMP: ${{ steps.plan.outputs.bump }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          old=$(jq -r .version CloudronManifest.json)
+          if [[ "${BUMP}" == true ]]; then
+            new=$(echo "$old" | awk -F. '{print $1"."$2"."$3+1}')
+            jq --arg v "$new" --arg u "$LANGFUSE" '.version = $v | .upstreamVersion = $u' CloudronManifest.json > m.json
+            mv m.json CloudronManifest.json
+            {
+              echo
+              echo "[${new}]"
+              if [[ "${UPSTREAM_CHANGED}" == true ]]; then
+                echo "* Update Langfuse to ${LANGFUSE} (https://github.com/langfuse/langfuse/releases/tag/${TAG})"
+              fi
+              if [[ -n "${NOTES}" ]]; then printf '* %s\n' "${NOTES}"; fi
+              if [[ "${UPSTREAM_CHANGED}" != true && -z "${NOTES}" ]]; then echo "* Package maintenance release"; fi
+            } >> CHANGELOG
+          else
+            # First release: keep the version, but ship the latest Langfuse.
+            new=${old}
+            jq --arg u "$LANGFUSE" '.upstreamVersion = $u' CloudronManifest.json > m.json
+            mv m.json CloudronManifest.json
+            sed -i -E "s/^\* Initial release: Langfuse [0-9.]+$/* Initial release: Langfuse ${LANGFUSE}/" CHANGELOG
+          fi
+          echo "version=${new}" >> "$GITHUB_OUTPUT"
+          echo "langfuse=$(jq -r .upstreamVersion CloudronManifest.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Lint
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          bash -n start.sh app-env.sh web.sh worker.sh backup.sh restore.sh test/smoke.sh test/upgrade.sh
+          shellcheck -S warning start.sh app-env.sh web.sh worker.sh backup.sh restore.sh test/smoke.sh test/upgrade.sh
+          jq empty CloudronManifest.json CloudronVersions.json
+
+      - name: Set up Docker Buildx
+        if: steps.plan.outputs.release == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (runs the build-time checks)
+        if: steps.plan.outputs.release == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: cloudron-langfuse:candidate
+
+      - name: Smoke test (PostgreSQL 16, Cloudron 10.0)
+        if: steps.plan.outputs.release == 'true'
+        run: PG_IMAGE=postgres:16-alpine test/smoke.sh cloudron-langfuse:candidate
+
+      - name: Smoke test (PostgreSQL 18, Cloudron 10.1)
+        if: steps.plan.outputs.release == 'true'
+        run: PG_IMAGE=postgres:18-alpine test/smoke.sh cloudron-langfuse:candidate
+
+      - name: Upgrade test (last published version with data -> candidate)
+        if: steps.plan.outputs.release == 'true'
+        run: |
+          old=$(jq -r '[.versions | to_entries[] | select(.value.publishState == "published")]
+            | sort_by(.key | split(".") | map(tonumber)) | last | .value.manifest.dockerImage // empty' CloudronVersions.json)
+          if [[ -z "${old}" ]]; then echo "no published version yet; skipping"; exit 0; fi
+          test/upgrade.sh "${old}" cloudron-langfuse:candidate
+
+      - name: Log in to GHCR
+        if: steps.plan.outputs.release == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image
+        id: push
+        if: steps.plan.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker tag cloudron-langfuse:candidate "${IMAGE}:${VERSION}"
+          docker push "${IMAGE}:${VERSION}"
+          ref=$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${VERSION}")
+          [[ "${ref}" == "${IMAGE}@sha256:"* ]] || { echo "unexpected pushed reference ${ref}" >&2; exit 1; }
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the version, commit and tag
+        if: steps.plan.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          LANGFUSE: ${{ steps.version.outputs.langfuse }}
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          npm install --global cloudron@9.0.3
+          cloudron versions add --image "${REF}" --state published
+          cloudron versions verify
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Dockerfile CloudronManifest.json CHANGELOG CloudronVersions.json
+          git commit -m "Release ${VERSION} (Langfuse ${LANGFUSE})"
+          # main may have moved while this ran (package changes); the release files are ours.
+          git pull --rebase origin main
+          git tag -a "v${VERSION}" -m "Langfuse for Cloudron ${VERSION}"
+          git push origin main "v${VERSION}"
+          {
+            echo "### Released ${VERSION} (Langfuse ${LANGFUSE})"
+            echo "Image: \`${REF}\`"
+            echo
+            echo "Update the app from the Cloudron dashboard: app → Updates."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report a failed update
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LANGFUSE: ${{ steps.upstream.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Automatic update to Langfuse ${LANGFUSE:-?} failed"
+          existing=$(gh issue list --state open --search "\"${title}\" in:title" --json number --jq '.[0].number // empty')
+          if [[ -n "${existing}" ]]; then
+            gh issue comment "${existing}" --body "Failed again: ${RUN_URL}"
+          else
+            gh issue create --title "${title}" --body "The automatic update stopped before publishing, so nothing was released and installations are unaffected.
+
+          Run: ${RUN_URL}
+
+          Typical causes: a build-time check (Node runtime, Prisma engines, native modules, layout of the upstream images), the smoke test (PostgreSQL 16 or 18: ingestion, media, backup/restore) or the upgrade test (migrations). Fix on main; the next scheduled run retries."
+          fi

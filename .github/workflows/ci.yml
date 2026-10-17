@@ -1,0 +1,49 @@
+# Lint, build the image (with its build-time checks), run the smoke test on PostgreSQL 16 and 18
+# and the upgrade test from the last published version, for every pull request and push to main.
+# Nothing is published here; releases go through "Update Langfuse" (update.yml).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore: ["CloudronVersions.json", "*.md"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint
+        run: |
+          bash -n start.sh app-env.sh web.sh worker.sh backup.sh restore.sh test/smoke.sh test/upgrade.sh
+          shellcheck -S warning start.sh app-env.sh web.sh worker.sh backup.sh restore.sh test/smoke.sh test/upgrade.sh
+          jq empty CloudronManifest.json CloudronVersions.json
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (runs the build-time checks)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: cloudron-langfuse:ci
+
+      - name: Smoke test (PostgreSQL 16, Cloudron 10.0)
+        run: PG_IMAGE=postgres:16-alpine test/smoke.sh cloudron-langfuse:ci
+
+      - name: Smoke test (PostgreSQL 18, Cloudron 10.1)
+        run: PG_IMAGE=postgres:18-alpine test/smoke.sh cloudron-langfuse:ci
+
+      - name: Upgrade test (last published version with data -> this build)
+        run: |
+          old=$(jq -r '[.versions | to_entries[] | select(.value.publishState == "published")]
+            | sort_by(.key | split(".") | map(tonumber)) | last | .value.manifest.dockerImage // empty' CloudronVersions.json)
+          if [[ -z "${old}" ]]; then echo "no published version yet; skipping"; exit 0; fi
+          test/upgrade.sh "${old}" cloudron-langfuse:ci
