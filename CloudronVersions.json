@@ -62,6 +62,68 @@
             "creationDate": "Sat, 17 Oct 2026 13:11:44 GMT",
             "ts": "Sat, 17 Oct 2026 13:11:44 GMT",
             "publishState": "published"
+        },
+        "0.1.1": {
+            "manifest": {
+                "manifestVersion": 2,
+                "id": "io.github.ravolar.langfuse",
+                "title": "Langfuse",
+                "tagline": "Open-source LLM observability: tracing, evals, prompt management",
+                "description": "This is an **unofficial community package**, not affiliated with or supported by Langfuse GmbH.\n\nLangfuse is an open-source LLM engineering platform: trace and debug LLM applications and agents,\nrun evaluations, manage and version prompts, build datasets and track cost, latency and quality.\nIt works with the Langfuse SDKs (Python, JS/TS), OpenTelemetry and integrations such as LangChain,\nLlamaIndex, the OpenAI SDK and LiteLLM.\n\n### This package\n\n* Langfuse web and worker, with a bundled ClickHouse (traces) and S3 server (raw events, media);\n  PostgreSQL, Redis and outgoing email provided by Cloudron.\n* Sign-in with Cloudron accounts, another OpenID Connect provider, or email and password;\n  sign-up is closed by default.\n* Cloudron backups and restore cover all of it, ClickHouse included.\n",
+                "changelog": "* Optional retention for raw ingestion events: S3_EVENTS_RETENTION_DAYS in env.sh deletes S3 event files older than that, daily\n",
+                "postInstallMessage": "**With Cloudron user management:** sign in with your Cloudron account. The first person to sign in\ncreates the first organization; others see only what they are invited to (and may create their own).\n\n**Without it:** open the **File Manager**, set your email as `LANGFUSE_INIT_USER_EMAIL` in\n`/app/data/env.sh` and **restart** the app. Your password is in the **Web Terminal**:\n`grep INITIAL_ADMIN /app/data/.secrets/secrets.env`. Sign-up is closed to everyone else.\n\nThen create a project and its API keys, and point your SDKs at `https://$CLOUDRON-APP-DOMAIN`.\n",
+                "version": "0.1.1",
+                "upstreamVersion": "4.63.0",
+                "website": "https://langfuse.com",
+                "documentationUrl": "https://langfuse.com/self-hosting",
+                "packagerName": "ravolar",
+                "packagerUrl": "https://github.com/ravolar/cloudron-langfuse",
+                "iconUrl": "https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/logo.png",
+                "icon": "file://logo.png",
+                "mediaLinks": [
+                    "https://raw.githubusercontent.com/ravolar/cloudron-langfuse/main/logo.png"
+                ],
+                "tags": [
+                    "developer",
+                    "ai",
+                    "analytics",
+                    "observability"
+                ],
+                "httpPort": 3000,
+                "healthCheckPath": "/api/public/health",
+                "memoryLimit": 4294967296,
+                "persistentDirs": [
+                    "/var/lib/clickhouse"
+                ],
+                "backupCommand": "/app/pkg/backup.sh",
+                "restoreCommand": "/app/pkg/restore.sh",
+                "httpPorts": {
+                    "LANGFUSE_MEDIA_DOMAIN": {
+                        "title": "Media storage",
+                        "description": "S3 endpoint for multimodal trace attachments (images, audio, files), used by SDKs and browsers through presigned links. Requests need a valid signature; the bucket is private.",
+                        "containerPort": 9100,
+                        "defaultValue": "langfuse-media"
+                    }
+                },
+                "addons": {
+                    "localstorage": {},
+                    "postgresql": {},
+                    "redis": {},
+                    "oidc": {
+                        "loginRedirectUri": "/api/auth/callback/custom"
+                    },
+                    "sendmail": {
+                        "supportsDisplayName": true
+                    }
+                },
+                "optionalSso": true,
+                "minBoxVersion": "10.0.0",
+                "packageUrl": "https://github.com/ravolar/cloudron-langfuse",
+                "dockerImage": "ghcr.io/ravolar/cloudron-langfuse@sha256:1c8770146e85aad60d9c211952560876634701e36165e19a4cf7146fa65a7849"
+            },
+            "creationDate": "Sat, 17 Oct 2026 14:57:30 GMT",
+            "ts": "Sat, 17 Oct 2026 14:57:30 GMT",
+            "publishState": "published"
         }
     }
 }
