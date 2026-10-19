@@ -3,3 +3,6 @@
 
 [0.1.1]
 * Optional retention for raw ingestion events: S3_EVENTS_RETENTION_DAYS in env.sh deletes S3 event files older than that, daily
+
+[0.1.2]
+* Update Langfuse to 4.64.0 (https://github.com/langfuse/langfuse/releases/tag/v4.64.0)
