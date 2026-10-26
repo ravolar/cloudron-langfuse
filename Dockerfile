@@ -10,12 +10,12 @@
 #   s3          versity/versitygw                  S3 on :9100 (also the public media subdomain),
 #                                                  objects as plain files in /app/data/s3
 #
-# The way the upstream Node runs on cloudron/base (RHEL node + libnode + ICU data + rhel Prisma
+# The way the upstream Node runs on cloudron/base (RHEL node + rhel Prisma
 # engines) and the ClickHouse setup are adapted from OrcVole's langfuse-cloudron (MIT),
 # https://github.com/OrcVole/langfuse-cloudron.
 
-FROM ghcr.io/langfuse/langfuse:4.70.0@sha256:932a46dfab770f89ecb2ec35258b6b80d3be8773403981a64d271ff0a408deef AS web
-FROM ghcr.io/langfuse/langfuse-worker:4.70.0@sha256:3b3b204fa72fd02d010ab90c667d07281e4b9ec3b5b0b1d21470ac2624b8a564 AS worker
+FROM ghcr.io/langfuse/langfuse:4.70.1@sha256:71b04842ecff8fe0dd15c7bbb1acd6e0555735e393a8108c43feb4b8d0adf9e6 AS web
+FROM ghcr.io/langfuse/langfuse-worker:4.70.1@sha256:3976a73de84a29999ff4573398e240127b8a92012421ce5eec61cd57f087d8ca AS worker
 # Langfuse v4 recommends ClickHouse 26.4 (25.12 is the minimum).
 FROM docker.io/clickhouse/clickhouse-server:26.4@sha256:c7796a1335d14385c052f10061cf719f4a368a908432ec25980860b1333e9ccd AS clickhouse
 # Versity S3 Gateway (Apache-2.0): a maintained S3 server over a plain directory, a static binary.
@@ -23,13 +23,10 @@ FROM docker.io/versity/versitygw:v1.9.0@sha256:eb7f786fcd91e72194e48fcf1ac16302d
 
 FROM docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b
 
-# cloudron/base has no Node.js. The upstream images run RHEL's Node 24 (a small launcher, libnode
-# and a separate ICU data file at a compiled-in path); all glibc, so it runs on the base's newer
-# glibc. Without the ICU data Intl.Segmenter segfaults.
+# cloudron/base has no Node.js. The upstream images run RHEL's Node 24, a single binary with
+# ICU built in (up to 4.70.0 it was a small launcher plus libnode and a separate ICU data file);
+# all glibc, so it runs on the base's newer glibc. The gate below checks Intl.Segmenter.
 COPY --from=web /usr/bin/node /usr/local/bin/node
-COPY --from=web /lib64/libnode.so.137 /usr/local/lib/libnode.so.137
-COPY --from=web /usr/share/node-24/icudata /usr/share/node-24/icudata
-RUN ldconfig
 
 # Each tree keeps the upstream /app layout, so paths relative to the working directory match.
 COPY --from=web /app /app/code/web
@@ -64,7 +61,7 @@ RUN mkdir -p /var/lib/clickhouse && chown cloudron:cloudron /var/lib/clickhouse
 
 # Build-time gates: fail here, not on a user's server.
 RUN set -eu; \
-    if ldd /usr/local/bin/node /usr/local/lib/libnode.so.137 /app/code/.engines/query-engine.so.node \
+    if ldd /usr/local/bin/node /app/code/.engines/query-engine.so.node \
         /app/code/.engines/schema-engine /usr/bin/clickhouse 2>&1 | grep -i 'not found'; then exit 1; fi; \
     node -p "'node ' + process.versions.node + ', openssl ' + process.versions.openssl"; \
     node -e "if ([...new Intl.Segmenter('en', { granularity: 'word' }).segment('hi there')].length < 3) process.exit(1)"; \
