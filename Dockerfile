@@ -14,8 +14,8 @@
 # engines) and the ClickHouse setup are adapted from OrcVole's langfuse-cloudron (MIT),
 # https://github.com/OrcVole/langfuse-cloudron.
 
-FROM ghcr.io/langfuse/langfuse:4.70.1@sha256:71b04842ecff8fe0dd15c7bbb1acd6e0555735e393a8108c43feb4b8d0adf9e6 AS web
-FROM ghcr.io/langfuse/langfuse-worker:4.70.1@sha256:3976a73de84a29999ff4573398e240127b8a92012421ce5eec61cd57f087d8ca AS worker
+FROM ghcr.io/langfuse/langfuse:4.71.0@sha256:1e600bc28c40fa0c028b9ed313e51d421132fe423ba84986fb9242fc40b7cd42 AS web
+FROM ghcr.io/langfuse/langfuse-worker:4.71.0@sha256:8e7cfec29f6322a8aff64e8ff4f9194c5c8181d4286514be0e3727b199605949 AS worker
 # Langfuse v4 recommends ClickHouse 26.4 (25.12 is the minimum).
 FROM docker.io/clickhouse/clickhouse-server:26.4@sha256:c7796a1335d14385c052f10061cf719f4a368a908432ec25980860b1333e9ccd AS clickhouse
 # Versity S3 Gateway (Apache-2.0): a maintained S3 server over a plain directory, a static binary.
@@ -23,10 +23,17 @@ FROM docker.io/versity/versitygw:v1.9.0@sha256:eb7f786fcd91e72194e48fcf1ac16302d
 
 FROM docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b
 
-# cloudron/base has no Node.js. The upstream images run RHEL's Node 24, a single binary with
-# ICU built in (up to 4.70.0 it was a small launcher plus libnode and a separate ICU data file);
-# all glibc, so it runs on the base's newer glibc. The gate below checks Intl.Segmenter.
-COPY --from=web /usr/bin/node /usr/local/bin/node
+# cloudron/base has no Node.js. The upstream images run RHEL's Node 24. Its layout changes between
+# upstream builds: either a single binary with ICU built in (4.70.1), or a small launcher plus
+# libnode and a separate ICU data file at a compiled-in path (4.70.0, 4.71.0). Both are glibc, so
+# they run on the base's newer glibc; copy whichever parts exist. The gate below checks that Node
+# starts and that Intl.Segmenter works (without ICU data it segfaults).
+RUN --mount=type=bind,from=web,source=/,target=/web \
+    set -eu; \
+    cp /web/usr/bin/node /usr/local/bin/node; \
+    for lib in /web/lib64/libnode.so.*; do [ -e "${lib}" ] && cp "${lib}" /usr/local/lib/; done; \
+    if [ -d /web/usr/share/node-24/icudata ]; then mkdir -p /usr/share/node-24 && cp -r /web/usr/share/node-24/icudata /usr/share/node-24/; fi; \
+    ldconfig
 
 # Each tree keeps the upstream /app layout, so paths relative to the working directory match.
 COPY --from=web /app /app/code/web
