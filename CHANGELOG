@@ -30,3 +30,6 @@
 
 [0.1.10]
 * Update Langfuse to 4.71.0 (https://github.com/langfuse/langfuse/releases/tag/v4.71.0)
+
+[0.1.11]
+* Update Langfuse to 4.72.0 (https://github.com/langfuse/langfuse/releases/tag/v4.72.0)
