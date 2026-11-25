@@ -14,8 +14,8 @@
 # engines) and the ClickHouse setup are adapted from OrcVole's langfuse-cloudron (MIT),
 # https://github.com/OrcVole/langfuse-cloudron.
 
-FROM ghcr.io/langfuse/langfuse:4.84.0@sha256:98dda704ccb87c5704a29eeac4a9de313fcfe9f3d1f01e1df9b8adba31f92d3b AS web
-FROM ghcr.io/langfuse/langfuse-worker:4.84.0@sha256:34c122feaa110afc8b1174d8c9933ec707d670b67e0e58334aaff43d5ce012f6 AS worker
+FROM ghcr.io/langfuse/langfuse:4.86.0@sha256:514f9851ce7c8c8288a12620f99911f80aecc5aa49a43fe07eecf02cfc96546e AS web
+FROM ghcr.io/langfuse/langfuse-worker:4.86.0@sha256:cc6a5dbdcf0e164f94f3a78bcee97e971f7f22ed3ac374ea9c40e64455903811 AS worker
 # Langfuse v4 recommends ClickHouse 26.4 (25.12 is the minimum).
 FROM docker.io/clickhouse/clickhouse-server:26.4@sha256:c7796a1335d14385c052f10061cf719f4a368a908432ec25980860b1333e9ccd AS clickhouse
 # Versity S3 Gateway (Apache-2.0): a maintained S3 server over a plain directory, a static binary.
